@@ -1,51 +1,26 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
-import models
-
-class RegisterRequest(BaseModel):
-    username: str
-    telegram_id: Optional[int] = None
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
+from database import Base
 
 
-class UserOut(BaseModel):
-    id: int
-    username: str
+class User(Base):
+    tablename = "users"
 
-    class Config:
-        from_attributes = True
-
-
-class MessageCreate(BaseModel):
-    to: int
-    iv: str
-    ciphertext: str
-    msg_type: str = "text"
-    ttl_sec: Optional[int] = None
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True)
+    telegram_id = Column(Integer, nullable=True)
+    token = Column(String, unique=True)
+    pubkey = Column(String, nullable=True)
 
 
-class MessageOut(BaseModel):
-    id: int
-    from_id: int
-    to_id: int
-    iv: str
-    ciphertext: str
-    msg_type: str
-    ttl_sec: Optional[int]
-    created_at: datetime
+class Message(Base):
+    tablename = "messages"
 
-    class Config:
-        from_attributes = True
-
-
-class MessagesResponse(BaseModel):
-    messages: List[MessageOut]
-
-
-# E2EE pubkey
-class PubKeyUpdate(BaseModel):
-    pubkey: str   # JWK JSON як строка
-
-
-class PubKeyOut(BaseModel):
-    pubkey: str
+    id = Column(Integer, primary_key=True, index=True)
+    from_id = Column(Integer)
+    to_id = Column(Integer)
+    iv = Column(String)
+    ciphertext = Column(String)
+    msg_type = Column(String)
+    ttl_sec = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
