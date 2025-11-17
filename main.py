@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 from typing import Optional
 import secrets
 
-from . import models
-from . import schemas
-from .database import engine, SessionLocal
+import models
+import schemas
+from database import engine, SessionLocal
 
 
 # Створюємо таблиці БД
