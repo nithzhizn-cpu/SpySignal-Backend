@@ -1,41 +1,149 @@
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime
+from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from typing import Optional
+import secrets
 
-class RegisterRequest(BaseModel):
-    username: str
-    telegram_id: Optional[int] = None
+import models
+import schemas
+from database import engine, SessionLocal
 
-class UserOut(BaseModel):
-    id: int
-    username: str
 
-    model_config = {"from_attributes": True}
+models.Base.metadata.create_all(bind=engine)
 
-class PubKeyUpdate(BaseModel):
-    pubkey: str
+app = FastAPI(title="SpySignal Railway Backend")
 
-class PubKeyOut(BaseModel):
-    pubkey: str
+origins = ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class MessageCreate(BaseModel):
-    to: int
-    iv: str
-    ciphertext: str
-    msg_type: str = "text"
-    ttl_sec: Optional[int] = None
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-class MessageOut(BaseModel):
-    id: int
-    from_id: int
-    to_id: int
-    iv: str
-    ciphertext: str
-    msg_type: str
-    ttl_sec: Optional[int]
-    created_at: datetime
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing Authorization header")
 
-    model_config = {"from_attributes": True}
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid header")
 
-class MessagesResponse(BaseModel):
-    messages: List[MessageOut]
+    token = parts[1]
+    user = db.query(models.User).filter(models.User.token == token).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    return user
+
+@app.post("/api/register")
+def register(req: schemas.RegisterRequest, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.username == req.username).first()
+    if existing:
+        return {
+            "id": existing.id,
+            "username": existing.username,
+            "token": existing.token,
+        }
+
+    token = secrets.token_hex(32)
+    user = models.User(username=req.username, telegram_id=req.telegram_id, token=token)
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {"id": user.id, "username": user.username, "token": user.token}
+
+@app.get("/api/users/search")
+def search_users(query: str, db: Session = Depends(get_db)):
+    q = query.strip()
+    if not q:
+        return {"results": []}
+
+    results = []
+
+    if q.isdigit():
+        u = db.query(models.User).filter(models.User.id == int(q)).first()
+        if u:
+            results.append(u)
+
+    by_name = db.query(models.User).filter(models.User.username.ilike(f"%{q}%")).all()
+
+    for u in by_name:
+        if u not in results:
+            results.append(u)
+
+    return {"results": [schemas.UserOut.model_validate(u) for u in results]}
+
+@app.post("/api/pubkey")
+def save_pubkey(req: schemas.PubKeyUpdate, current=Depends(get_current_user), db: Session = Depends(get_db)):
+    current.pubkey = req.pubkey
+    db.commit()
+    return {"ok": True}
+
+@app.get("/api/pubkey/{user_id}", response_model=schemas.PubKeyOut)
+def get_pubkey(user_id: int, db: Session = Depends(get_db)):
+    u = db.query(models.User).filter(models.User.id == user_id).first()
+    if not u or not u.pubkey:
+        raise HTTPException(status_code=404, detail="No pubkey")
+    return {"pubkey": u.pubkey}
+
+@app.post("/api/messages")
+def create_message(msg: schemas.MessageCreate, current=Depends(get_current_user), db: Session = Depends(get_db)):
+    peer = db.query(models.User).filter(models.User.id == msg.to).first()
+    if not peer:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+
+    m = models.Message(
+        from_id=current.id,
+        to_id=peer.id,
+        iv=msg.iv,
+        ciphertext=msg.ciphertext,
+        msg_type=msg.msg_type,
+        ttl_sec=msg.ttl_sec,
+    )
+
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return {"ok": True, "id": m.id}
+
+@app.get("/api/messages", response_model=schemas.MessagesResponse)
+def get_messages(peer_id: int, current=Depends(get_current_user), db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+
+    msgs = (
+        db.query(models.Message)
+        .filter(
+            ((models.Message.from_id == current.id) & (models.Message.to_id == peer_id))
+            | ((models.Message.from_id == peer_id) & (models.Message.to_id == current.id))
+        )
+        .order_by(models.Message.created_at.asc())
+        .all()
+    )
+
+    visible = []
+    for m in msgs:
+        if m.ttl_sec and m.created_at + timedelta(seconds=m.ttl_sec) < now:
+            continue
+        visible.append(m)
+
+    return {"messages": visible}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
