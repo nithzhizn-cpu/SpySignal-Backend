@@ -1,26 +1,41 @@
-from sqlalchemy import Column, Integer, String, DateTime
-from sqlalchemy.sql import func
-from database import Base
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 
+class RegisterRequest(BaseModel):
+    username: str
+    telegram_id: Optional[int] = None
 
-class User(Base):
-    tablename = "users"
+class UserOut(BaseModel):
+    id: int
+    username: str
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, index=True)
-    telegram_id = Column(Integer, nullable=True)
-    token = Column(String, unique=True)
-    pubkey = Column(String, nullable=True)
+    model_config = {"from_attributes": True}
 
+class PubKeyUpdate(BaseModel):
+    pubkey: str
 
-class Message(Base):
-    tablename = "messages"
+class PubKeyOut(BaseModel):
+    pubkey: str
 
-    id = Column(Integer, primary_key=True, index=True)
-    from_id = Column(Integer)
-    to_id = Column(Integer)
-    iv = Column(String)
-    ciphertext = Column(String)
-    msg_type = Column(String)
-    ttl_sec = Column(Integer, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+class MessageCreate(BaseModel):
+    to: int
+    iv: str
+    ciphertext: str
+    msg_type: str = "text"
+    ttl_sec: Optional[int] = None
+
+class MessageOut(BaseModel):
+    id: int
+    from_id: int
+    to_id: int
+    iv: str
+    ciphertext: str
+    msg_type: str
+    ttl_sec: Optional[int]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+class MessagesResponse(BaseModel):
+    messages: List[MessageOut]
