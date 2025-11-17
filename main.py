@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 import secrets
 
-import models
-import schemas
+from models import *
+from schemas import *
 from database import engine, SessionLocal
 
 
