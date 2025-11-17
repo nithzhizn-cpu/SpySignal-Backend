@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-
+from database import Base
 DATABASE_URL = "sqlite:///./spysignal.db"
 
 engine = create_engine(
