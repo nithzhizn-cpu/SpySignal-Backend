@@ -1,32 +1,25 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
-from datetime import datetime
-import models
-
+from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
+from database import Base   # ← ОБОВʼЯЗКОВИЙ ІМПОРТ !!!
 
 class User(Base):
-    __tablename__ = "users"
+    tablename = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    telegram_id = Column(Integer, index=True, nullable=True)
-    token = Column(String, unique=True, index=True, nullable=False)
-
-    # Публічний E2EE ключ у вигляді JWK (JSON-рядок)
+    username = Column(String, index=True)
+    telegram_id = Column(Integer, nullable=True)
+    token = Column(String, unique=True)
     pubkey = Column(String, nullable=True)
 
 
 class Message(Base):
-    __tablename__ = "messages"
+    tablename = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    from_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    to_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    iv = Column(String, nullable=False)
-    ciphertext = Column(String, nullable=False)
-    msg_type = Column(String, default="text", nullable=False)
+    from_id = Column(Integer)
+    to_id = Column(Integer)
+    iv = Column(String)
+    ciphertext = Column(String)
+    msg_type = Column(String)
     ttl_sec = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-    from_user = relationship("User", foreign_keys=[from_id])
-    to_user = relationship("User", foreign_keys=[to_id])
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
